@@ -94,4 +94,4 @@ EXPOSE 27960/UDP
 USER legacy
 
 # Set entrypoint
-ENTRYPOINT ["./start"]
+ENTRYPOINT ["./start-go"]

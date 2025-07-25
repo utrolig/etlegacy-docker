@@ -5,3 +5,6 @@
 !entrypoint.sh
 !autorestart.sh
 !README.md
+!entrypoint.go
+!go.mod
+!go.sum

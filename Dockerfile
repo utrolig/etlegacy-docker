@@ -44,6 +44,19 @@ RUN if [ "$TARGETARCH" = "arm64" ]; then \
 COPY --chmod=755 entrypoint.sh ./start
 COPY --chmod=755 autorestart.sh ./autorestart
 
+# Go build stage
+FROM golang:1.24-alpine AS go-builder
+
+WORKDIR /build
+
+# Copy go module files
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source code and build
+COPY entrypoint.go ./
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o entrypoint-go ./entrypoint.go
+
 # Final stage
 FROM debian:stable-slim
 
@@ -68,6 +81,9 @@ RUN apt-get update && \
 
 # Copy files from builder
 COPY --from=builder --chown=legacy:legacy /legacy /legacy/
+
+# Copy Go binary from go-builder
+COPY --from=go-builder --chown=legacy:legacy /build/entrypoint-go /legacy/server/start-go
 
 # Configure volumes and working directory
 VOLUME ["/legacy/homepath", "/legacy/server/etmain"]

@@ -6,11 +6,13 @@ import (
 	"log"
 	"net/http"
 	"os"
+	// "os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 
 	"github.com/kelseyhightower/envconfig"
 )
@@ -89,6 +91,7 @@ type GamePaths struct {
 	Etmain       string
 	Legacy       string
 	Home         string
+	Executable   string
 }
 
 func loadPaths() GamePaths {
@@ -97,6 +100,7 @@ func loadPaths() GamePaths {
 	etmain := filepath.Join(gameBase, "etmain")
 	legacy := filepath.Join(gameBase, "legacy")
 	home := filepath.Join("/", "legacy", "homepath")
+	executable := filepath.Join(gameBase, "etlded")
 
 	return GamePaths{
 		GameBase:     gameBase,
@@ -104,6 +108,7 @@ func loadPaths() GamePaths {
 		Etmain:       etmain,
 		Legacy:       legacy,
 		Home:         home,
+		Executable:   executable,
 	}
 }
 
@@ -518,6 +523,43 @@ func configureTrackerAPI(cfg *Config, paths GamePaths) error {
 	return os.WriteFile(trackerFile, []byte(configStr), 0644)
 }
 
+func startServer(cfg *Config, paths GamePaths) error {
+	maxClients := fmt.Sprintf("+set sv_maxclients \"%d\"", cfg.MaxClients)
+	netPort := fmt.Sprintf("+set net_port \"%d\"", cfg.MapPort)
+	basePath := fmt.Sprintf("+set fs_basepath \"%s\"", paths.GameBase)
+	homePath := fmt.Sprintf("+set fs_homepath \"%s\"", paths.Home)
+	tracker := fmt.Sprintf("+set sv_tracker \"%s\"", cfg.SvTracker)
+	execCfg := "+exec \"etl_server.cfg\""
+	startMap := fmt.Sprintf("+map \"%s\"", cfg.StartMap)
+
+	// cmd := exec.Command(paths.Executable, maxClients, netPort, basePath, homePath, tracker, execCfg, startMap)
+
+	args := []string{maxClients, netPort, basePath, homePath, tracker, execCfg, startMap}
+
+	err := syscall.Exec(paths.Executable, args, []string{})
+
+	// fmt.Println(cmd.Args)
+
+	// stdout, err := cmd.Output()
+
+	if err != nil {
+		return err
+	}
+
+	// fmt.Println(string(stdout))
+	return nil
+	//	exec "${GAME_BASE}/etlded" \
+	//	    +set sv_maxclients "${CONF[MAXCLIENTS]}" \
+	//	    +set net_port "${CONF[MAP_PORT]}" \
+	//	    +set fs_basepath "${GAME_BASE}" \
+	//	    +set fs_homepath "/legacy/homepath" \
+	//	    +set sv_tracker "${CONF[SVTRACKER]}" \
+	//	    +exec "etl_server.cfg" \
+	//	    +map "${CONF[STARTMAP]}" \
+	//	    "${ADDITIONAL_ARGS[@]}" \
+	//	    "$@"
+}
+
 func main() {
 	cfg, err := loadConfig()
 	if err != nil {
@@ -558,4 +600,8 @@ func main() {
 	log.Printf("Hostname: %s", cfg.Hostname)
 	log.Printf("Stats submission enabled: %t", cfg.StatsSubmit)
 	log.Printf("Tracker enabled: %t", cfg.Tracker)
+
+	if err := startServer(cfg, paths); err != nil {
+		log.Printf("Error starting server: %v", err)
+	}
 }

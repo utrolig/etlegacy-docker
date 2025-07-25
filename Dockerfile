@@ -95,3 +95,4 @@ USER legacy
 
 # Set entrypoint
 ENTRYPOINT ["./start-go"]
+# ENTRYPOINT ["./start"]

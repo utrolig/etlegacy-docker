@@ -400,6 +400,48 @@ func updateServerConfig(cfg *Config, paths GamePaths) error {
 	return os.WriteFile(dstPath, []byte(configStr), 0644)
 }
 
+func handleExtraContent(cfg *Config, paths GamePaths) error {
+	if !cfg.Assets {
+		return nil
+	}
+
+	log.Println("Downloading assets...")
+
+	resp, err := http.Get(cfg.AssetsURL)
+	if err != nil {
+		log.Printf("Failed to download assets: %v", err)
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("Failed to download assets: HTTP %s", resp.Status)
+		return fmt.Errorf("HTTP %s", resp.Status)
+	}
+
+	filename := filepath.Base(cfg.AssetsURL)
+	if filename == "" || filename == "." {
+		filename = "assets.zip"
+	}
+
+	assetPath := filepath.Join(paths.Legacy, filename)
+	out, err := os.Create(assetPath)
+	if err != nil {
+		log.Printf("Failed to create asset file: %v", err)
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, resp.Body)
+	if err != nil {
+		log.Printf("Failed to write asset file: %v", err)
+		return err
+	}
+
+	log.Printf("Downloaded assets to %s", assetPath)
+	return nil
+}
+
 func boolToString(b bool) string {
 	if b {
 		return "true"
@@ -425,6 +467,10 @@ func main() {
 		log.Printf("Error updating server config: %v", err)
 	} else {
 		log.Printf("Wrote server config successfully")
+	}
+
+	if err := handleExtraContent(cfg, paths); err != nil {
+		log.Printf("Error handling extra content: %v", err)
 	}
 
 	log.Printf("Server starting on port %d", cfg.MapPort)

@@ -164,6 +164,8 @@ func downloadMapsParallel(cfg *Config, paths GamePaths, maps []string) error {
 				log.Printf("Failed to download %s: %v", name, err)
 				os.Remove(mapFilePath)
 			}
+
+			log.Printf("Downloaded %s successfully", mapName)
 		}(mapName)
 	}
 
@@ -219,8 +221,7 @@ func main() {
 
 	downloadMaps(cfg, paths)
 
-	log.Printf("Server running on port %d", cfg.MapPort)
+	log.Printf("Server starting on port %d", cfg.MapPort)
 	log.Printf("Hostname: %s", cfg.Hostname)
 	log.Printf("Stats submission enabled: %t", cfg.StatsSubmit)
-	log.Printf("Paths %s", paths)
 }

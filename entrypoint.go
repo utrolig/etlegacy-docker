@@ -211,6 +211,92 @@ func copyFile(src, dst string) error {
 	return err
 }
 
+func ensureDirectory(path string) error {
+	return os.MkdirAll(path, 0755)
+}
+
+func safeCopy(src, dst string) error {
+	if _, err := os.Stat(src); os.IsNotExist(err) {
+		return nil // Source file doesn't exist, skip silently
+	}
+	return copyFile(src, dst)
+}
+
+func copyGameAssets(paths GamePaths) error {
+	if err := ensureDirectory(filepath.Join(paths.Etmain, "mapscripts")); err != nil {
+		return fmt.Errorf("failed to create mapscripts directory: %v", err)
+	}
+	if err := ensureDirectory(filepath.Join(paths.Legacy, "luascripts")); err != nil {
+		return fmt.Errorf("failed to create luascripts directory: %v", err)
+	}
+
+	mapscriptsDir := filepath.Join(paths.Etmain, "mapscripts")
+	if files, err := filepath.Glob(filepath.Join(mapscriptsDir, "*.script")); err == nil {
+		for _, file := range files {
+			os.Remove(file)
+		}
+	}
+
+	if sourceMapscripts, err := filepath.Glob(filepath.Join(paths.SettingsBase, "mapscripts", "*.script")); err == nil {
+		for _, mapscript := range sourceMapscripts {
+			filename := filepath.Base(mapscript)
+			dst := filepath.Join(mapscriptsDir, filename)
+			if err := safeCopy(mapscript, dst); err != nil {
+				log.Printf("Warning: failed to copy mapscript %s: %v", filename, err)
+			}
+		}
+	}
+
+	luaScriptsDir := filepath.Join(paths.Legacy, "luascripts")
+	if sourceLuaScripts, err := filepath.Glob(filepath.Join(paths.SettingsBase, "luascripts", "*.lua")); err == nil {
+		for _, luascript := range sourceLuaScripts {
+			filename := filepath.Base(luascript)
+			dst := filepath.Join(luaScriptsDir, filename)
+			if err := safeCopy(luascript, dst); err != nil {
+				log.Printf("Warning: failed to copy luascript %s: %v", filename, err)
+			}
+		}
+	}
+
+	if sourceTomlFiles, err := filepath.Glob(filepath.Join(paths.SettingsBase, "luascripts", "*.toml")); err == nil {
+		for _, tomlfile := range sourceTomlFiles {
+			filename := filepath.Base(tomlfile)
+			dst := filepath.Join(luaScriptsDir, filename)
+			if err := safeCopy(tomlfile, dst); err != nil {
+				log.Printf("Warning: failed to copy toml file %s: %v", filename, err)
+			}
+		}
+	}
+
+	if sourceCommandMaps, err := filepath.Glob(filepath.Join(paths.SettingsBase, "commandmaps", "*.pk3")); err == nil {
+		for _, commandmap := range sourceCommandMaps {
+			filename := filepath.Base(commandmap)
+			dst := filepath.Join(paths.Legacy, filename)
+			if err := safeCopy(commandmap, dst); err != nil {
+				log.Printf("Warning: failed to copy commandmap %s: %v", filename, err)
+			}
+		}
+	}
+
+	configsDir := filepath.Join(paths.Etmain, "configs")
+	os.RemoveAll(configsDir)
+	if err := ensureDirectory(configsDir); err != nil {
+		return fmt.Errorf("failed to create configs directory: %v", err)
+	}
+
+	if sourceConfigs, err := filepath.Glob(filepath.Join(paths.SettingsBase, "configs", "*.config")); err == nil {
+		for _, config := range sourceConfigs {
+			filename := filepath.Base(config)
+			dst := filepath.Join(configsDir, filename)
+			if err := copyFile(config, dst); err != nil {
+				log.Printf("Warning: failed to copy config %s: %v", filename, err)
+			}
+		}
+	}
+
+	return nil
+}
+
 func main() {
 	cfg, err := loadConfig()
 	if err != nil {
@@ -220,6 +306,10 @@ func main() {
 	paths := loadPaths()
 
 	downloadMaps(cfg, paths)
+	
+	if err := copyGameAssets(paths); err != nil {
+		log.Printf("Error copying game assets: %v", err)
+	}
 
 	log.Printf("Server starting on port %d", cfg.MapPort)
 	log.Printf("Hostname: %s", cfg.Hostname)

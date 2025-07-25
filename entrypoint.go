@@ -557,4 +557,5 @@ func main() {
 	log.Printf("Server starting on port %d", cfg.MapPort)
 	log.Printf("Hostname: %s", cfg.Hostname)
 	log.Printf("Stats submission enabled: %t", cfg.StatsSubmit)
+	log.Printf("Tracker enabled: %t", cfg.Tracker)
 }

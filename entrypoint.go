@@ -449,6 +449,75 @@ func boolToString(b bool) string {
 	return "false"
 }
 
+func configureStatsAPI(cfg *Config, paths GamePaths) error {
+	configFile := filepath.Join(paths.Legacy, "luascripts", "config.toml")
+
+	if _, err := os.Stat(configFile); os.IsNotExist(err) {
+		return nil
+	}
+
+	content, err := os.ReadFile(configFile)
+	if err != nil {
+		return fmt.Errorf("failed to read config.toml: %v", err)
+	}
+
+	configStr := string(content)
+
+	configStr = strings.ReplaceAll(configStr, "docker_config = false", "docker_config = true")
+
+	replacements := map[string]string{
+		"%CONF_STATS_API_TOKEN%":             cfg.StatsAPIToken,
+		"%CONF_STATS_API_URL_SUBMIT%":        cfg.StatsAPIURLSubmit,
+		"%CONF_STATS_API_URL_MATCHID%":       cfg.StatsAPIURLMatchID,
+		"%CONF_STATS_API_PATH%":              cfg.StatsAPIPath,
+		"\"%CONF_STATS_API_LOG%\"":           boolToString(cfg.StatsAPILog),
+		"\"%CONF_STATS_API_OBITUARIES%\"":    boolToString(cfg.StatsAPIOBituaries),
+		"\"%CONF_STATS_API_MESSAGELOG%\"":    boolToString(cfg.StatsAPIMessageLog),
+		"\"%CONF_STATS_API_DAMAGESTAT%\"":    boolToString(cfg.StatsAPIDamageStat),
+		"\"%CONF_STATS_API_OBJSTATS%\"":      boolToString(cfg.StatsAPIObjStats),
+		"\"%CONF_STATS_API_DUMPJSON%\"":      boolToString(cfg.StatsAPIDumpJSON),
+		"\"%CONF_STATS_API_SHOVESTATS%\"":    boolToString(cfg.StatsAPIShoveStats),
+		"\"%CONF_STATS_API_MOVEMENTSTATS%\"": boolToString(cfg.StatsAPIMovementStats),
+		"\"%CONF_STATS_API_STANCESTATS%\"":   boolToString(cfg.StatsAPIStanceStats),
+		"\"%CONF_STATS_API_ALTMAPSCRIPTS%\"": boolToString(cfg.StatsAPIAltMapScripts),
+		"\"%CONF_STATS_API_FORCERENAME%\"":   boolToString(cfg.StatsAPIForceRename),
+	}
+
+	for placeholder, value := range replacements {
+		configStr = strings.ReplaceAll(configStr, placeholder, value)
+	}
+
+	return os.WriteFile(configFile, []byte(configStr), 0644)
+}
+
+func configureTrackerAPI(cfg *Config, paths GamePaths) error {
+	trackerFile := filepath.Join(paths.Legacy, "luascripts", "tracker.lua")
+
+	if _, err := os.Stat(trackerFile); os.IsNotExist(err) {
+		return nil
+	}
+
+	content, err := os.ReadFile(trackerFile)
+	if err != nil {
+		return fmt.Errorf("failed to read tracker.lua: %v", err)
+	}
+
+	configStr := string(content)
+
+	replacements := map[string]string{
+		"%CONF_TRACKER_API_ENDPOINT%": cfg.TrackerAPIEndpoint,
+		"%CONF_TRACKER_API_TOKEN%":    cfg.TrackerAPIToken,
+		"\"%CONF_TRACKER_DEBUG%\"":    boolToString(cfg.TrackerDebug),
+		"%CONF_TRACKER_DEBUG%":        boolToString(cfg.TrackerDebug),
+	}
+
+	for placeholder, value := range replacements {
+		configStr = strings.ReplaceAll(configStr, placeholder, value)
+	}
+
+	return os.WriteFile(trackerFile, []byte(configStr), 0644)
+}
+
 func main() {
 	cfg, err := loadConfig()
 	if err != nil {
@@ -471,6 +540,18 @@ func main() {
 
 	if err := handleExtraContent(cfg, paths); err != nil {
 		log.Printf("Error handling extra content: %v", err)
+	}
+
+	if cfg.StatsSubmit {
+		if err := configureStatsAPI(cfg, paths); err != nil {
+			log.Printf("Error configuring stats API: %v", err)
+		}
+	}
+
+	if cfg.Tracker {
+		if err := configureTrackerAPI(cfg, paths); err != nil {
+			log.Printf("Error configuring tracker API: %v", err)
+		}
 	}
 
 	log.Printf("Server starting on port %d", cfg.MapPort)

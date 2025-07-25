@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -297,6 +299,114 @@ func copyGameAssets(paths GamePaths) error {
 	return nil
 }
 
+func updateServerConfig(cfg *Config, paths GamePaths) error {
+	srcPath := filepath.Join(paths.SettingsBase, "etl_server.cfg")
+	dstPath := filepath.Join(paths.Etmain, "etl_server.cfg")
+
+	if err := copyFile(srcPath, dstPath); err != nil {
+		return fmt.Errorf("failed to copy server config: %v", err)
+	}
+
+	content, err := os.ReadFile(dstPath)
+	if err != nil {
+		return fmt.Errorf("failed to read server config: %v", err)
+	}
+
+	configStr := string(content)
+
+	if cfg.Password != "" {
+		configStr += "\nset g_needpass \"1\"\n"
+	}
+
+	replacements := map[string]string{
+		"%CONF_HOSTNAME%":                cfg.Hostname,
+		"%CONF_MAP_PORT%":                strconv.Itoa(cfg.MapPort),
+		"%CONF_REDIRECTURL%":             cfg.RedirectURL,
+		"%CONF_MAXCLIENTS%":              strconv.Itoa(cfg.MaxClients),
+		"%CONF_STARTMAP%":                cfg.StartMap,
+		"%CONF_TIMEOUTLIMIT%":            strconv.Itoa(cfg.TimeoutLimit),
+		"%CONF_SERVERCONF%":              cfg.ServerConf,
+		"%CONF_SVTRACKER%":               cfg.SvTracker,
+		"%CONF_PASSWORD%":                cfg.Password,
+		"%CONF_RCONPASSWORD%":            cfg.RconPassword,
+		"%CONF_REFPASSWORD%":             cfg.RefPassword,
+		"%CONF_SCPASSWORD%":              cfg.ScPassword,
+		"%CONF_SVAUTODEMO%":              strconv.Itoa(cfg.SvAutoDemo),
+		"%CONF_ETLTVMAXSLAVES%":          strconv.Itoa(cfg.EtltvMaxSlaves),
+		"%CONF_ETLTVPASSWORD%":           cfg.EtltvPassword,
+		"%CONF_SETTINGSURL%":             cfg.SettingsURL,
+		"%CONF_SETTINGSPAT%":             cfg.SettingsPAT,
+		"%CONF_SETTINGSBRANCH%":          cfg.SettingsBranch,
+		"%CONF_STATS_SUBMIT%":            boolToString(cfg.StatsSubmit),
+		"%CONF_STATS_API_LOG%":           boolToString(cfg.StatsAPILog),
+		"%CONF_STATS_API_TOKEN%":         cfg.StatsAPIToken,
+		"%CONF_STATS_API_PATH%":          cfg.StatsAPIPath,
+		"%CONF_STATS_API_URL_SUBMIT%":    cfg.StatsAPIURLSubmit,
+		"%CONF_STATS_API_URL_MATCHID%":   cfg.StatsAPIURLMatchID,
+		"%CONF_STATS_API_OBITUARIES%":    boolToString(cfg.StatsAPIOBituaries),
+		"%CONF_STATS_API_MESSAGELOG%":    boolToString(cfg.StatsAPIMessageLog),
+		"%CONF_STATS_API_DAMAGESTAT%":    boolToString(cfg.StatsAPIDamageStat),
+		"%CONF_STATS_API_SHOVESTATS%":    boolToString(cfg.StatsAPIShoveStats),
+		"%CONF_STATS_API_OBJSTATS%":      boolToString(cfg.StatsAPIObjStats),
+		"%CONF_STATS_API_DUMPJSON%":      boolToString(cfg.StatsAPIDumpJSON),
+		"%CONF_STATS_API_MOVEMENTSTATS%": boolToString(cfg.StatsAPIMovementStats),
+		"%CONF_STATS_API_STANCESTATS%":   boolToString(cfg.StatsAPIStanceStats),
+		"%CONF_STATS_API_ALTMAPSCRIPTS%": boolToString(cfg.StatsAPIAltMapScripts),
+		"%CONF_STATS_API_FORCERENAME%":   boolToString(cfg.StatsAPIForceRename),
+		"%CONF_ASSETS%":                  boolToString(cfg.Assets),
+		"%CONF_ASSETS_URL%":              cfg.AssetsURL,
+		"%CONF_TRACKER%":                 boolToString(cfg.Tracker),
+		"%CONF_TRACKER_API_ENDPOINT%":    cfg.TrackerAPIEndpoint,
+		"%CONF_TRACKER_API_TOKEN%":       cfg.TrackerAPIToken,
+		"%CONF_TRACKER_DEBUG%":           boolToString(cfg.TrackerDebug),
+	}
+
+	for placeholder, value := range replacements {
+		configStr = strings.ReplaceAll(configStr, placeholder, value)
+	}
+
+	re := regexp.MustCompile(`%CONF_[A-Z_]*%`)
+	configStr = re.ReplaceAllString(configStr, "")
+
+	if cfg.MOTD != "" {
+		re := regexp.MustCompile(`(?m)^set server_motd[0-9].*$`)
+		configStr = re.ReplaceAllString(configStr, "")
+
+		motdLines := strings.Split(strings.ReplaceAll(cfg.MOTD, "\\n", "\n"), "\n")
+
+		var motdConfig strings.Builder
+		for i := range 6 {
+			if i < len(motdLines) {
+				motdConfig.WriteString(fmt.Sprintf("set server_motd%d          \"%s\"\n", i, motdLines[i]))
+			} else {
+				motdConfig.WriteString(fmt.Sprintf("set server_motd%d          \"\"\n", i))
+			}
+		}
+
+		hostnameRe := regexp.MustCompile(`(?m)^set sv_hostname.*$`)
+		configStr = hostnameRe.ReplaceAllStringFunc(configStr, func(match string) string {
+			return match + "\n" + motdConfig.String()
+		})
+	}
+
+	extraConfigPath := filepath.Join(paths.GameBase, "extra.cfg")
+	if _, err := os.Stat(extraConfigPath); err == nil {
+		extraContent, err := os.ReadFile(extraConfigPath)
+		if err == nil {
+			configStr += "\n" + string(extraContent)
+		}
+	}
+
+	return os.WriteFile(dstPath, []byte(configStr), 0644)
+}
+
+func boolToString(b bool) string {
+	if b {
+		return "true"
+	}
+	return "false"
+}
+
 func main() {
 	cfg, err := loadConfig()
 	if err != nil {
@@ -306,9 +416,15 @@ func main() {
 	paths := loadPaths()
 
 	downloadMaps(cfg, paths)
-	
+
 	if err := copyGameAssets(paths); err != nil {
 		log.Printf("Error copying game assets: %v", err)
+	}
+
+	if err := updateServerConfig(cfg, paths); err != nil {
+		log.Printf("Error updating server config: %v", err)
+	} else {
+		log.Printf("Wrote server config successfully")
 	}
 
 	log.Printf("Server starting on port %d", cfg.MapPort)
